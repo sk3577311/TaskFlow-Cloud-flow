@@ -166,7 +166,7 @@ LinkedIn
 MIT License © 2025 Sameer Khan
 
 
----
-
+```
 Would you like me to now create the **`app/` folder structure with starter code** (FastAPI + Redis + PostgreSQL boilerplate for this project), so you can push it to GitHub directly?  
 It’ll include working routes, models, and queue logic for your first commit.
+```
