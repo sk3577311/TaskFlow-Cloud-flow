@@ -12,7 +12,7 @@ class JobStatus(str, Enum):
 
 class JobBase(BaseModel):
     task: str
-    paylaod: dict
+    payload: dict
 
 class JobResponse(JobBase):
     id: str
