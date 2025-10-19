@@ -1,6 +1,8 @@
+from threading import Thread
 from fastapi import FastAPI
 from app.routes import jobs
 from app.db import Base,engine
+from app.workers.retry_scheduler import retry_scheduler_loop
 
 Base.metadata.create_all(bind=engine)
 
@@ -11,7 +13,8 @@ app = FastAPI(
 )
 
 app.include_router(jobs.router)
-
+# Start background retry scheduler
+Thread(target=retry_scheduler_loop, daemon=True).start()
 @app.get("/")
 def read_root():
     return {"message": "Welcome to TaskFlow Cloud API"}

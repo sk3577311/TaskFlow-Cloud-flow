@@ -6,6 +6,13 @@ r = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
 
 QUERY_NAME = "taskflow_jobs"
 
+PRIORITY_SCORES = {
+    "high": 1,
+    "medium": 2,
+    "low": 3
+}
+
+
 def enqueue_job(job_data:dict):
     """
     Enqueue a job into the redis queue.

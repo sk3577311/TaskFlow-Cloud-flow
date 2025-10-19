@@ -2,6 +2,7 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import Any, Optional
 from enum import Enum
+from app.models import JobPriority
 
 
 class JobStatus(str, Enum):
@@ -23,3 +24,9 @@ class JobResponse(JobBase):
 
     class Config:
         orm_mode = True
+
+class JobCreate(BaseModel):
+    task: str
+    payload: dict
+    webhook_url: Optional[str] = None
+    priority: JobPriority = JobPriority.medium

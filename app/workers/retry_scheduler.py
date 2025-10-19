@@ -1,56 +1,38 @@
-import asyncio
-from datetime import datetime, timedelta
-from app.utils.config import settings
-from app.db import SESSION_LOCAL
-from app.models import Job, JobStatus
+import time
 import redis
+from datetime import datetime, timedelta
+from app.workers.worker import process_job
 
-# Redis client
-redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+redis_client = redis.Redis(host="localhost", port=6379, db=0)
 
-# Retry settings
-MAX_RETRIES = 5
+MAX_RETRIES = 3
 BASE_DELAY = 5  # seconds
 
+def schedule_retry(job_id: str, attempt: int):
+    """Schedule a retry using exponential backoff."""
+    delay = BASE_DELAY * (2 ** (attempt - 1))
+    next_run_time = datetime.utcnow() + timedelta(seconds=delay)
+    redis_client.zadd("retry_queue", {job_id: next_run_time.timestamp()})
+    redis_client.hset(f"job:{job_id}", mapping={"status": "scheduled_retry", "attempt": attempt})
+    print(f"🔁 Retry {attempt} scheduled for job {job_id} in {delay}s")
 
-async def schedule_retry(job_id: str):
-    """
-    Schedule a failed job for retry using exponential backoff.
-    """
-    db = SESSION_LOCAL()
-    try:
-        job = db.query(Job).filter(Job.id == job_id).first()
-        if not job:
-            print(f"⚠️ Job {job_id} not found in DB.")
-            return
+def retry_scheduler_loop():
+    """Continuously checks Redis for jobs ready to retry."""
+    print("🚀 Retry scheduler started...")
+    while True:
+        now = datetime.utcnow().timestamp()
+        ready_jobs = redis_client.zrangebyscore("retry_queue", 0, now)
 
-        retry_count = (job.retries_count or 0)
-        delay = BASE_DELAY * (2 ** retry_count)
+        for job_id in ready_jobs:
+            job_id = job_id.decode()
+            redis_client.zrem("retry_queue", job_id)
 
-        if retry_count >= MAX_RETRIES:
-            job.status = JobStatus.permanent_failed
-            db.commit()
-            print(f"💀 Job {job.id} permanently failed after {MAX_RETRIES} retries.")
-            return
+            attempt = int(redis_client.hget(f"job:{job_id}", "attempt") or 1)
+            if attempt > MAX_RETRIES:
+                print(f"❌ Job {job_id} reached max retries ({MAX_RETRIES})")
+                continue
 
-        # Update DB with next retry info
-        job.status = JobStatus.scheduled
-        job.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)
-        db.commit()
+            print(f"🔁 Retrying job {job_id}, attempt {attempt}")
+            process_job(job_id)
 
-        print(f"🔁 Scheduling retry {retry_count + 1} for Job {job.id} in {delay}s...")
-
-        # Sleep asynchronously for backoff duration
-        await asyncio.sleep(delay)
-
-        # Push job back into queue
-        redis_client.lpush("job_queue", {"job_id": job_id})
-        redis_client.hset(f"job:{job_id}", mapping={"status": "queued"})
-
-        print(f"📦 Job {job.id} requeued after {delay}s delay.")
-
-    except Exception as e:
-        print(f"⚠️ Retry scheduling failed for job {job_id}: {e}")
-
-    finally:
-        db.close()
+        time.sleep(2)
